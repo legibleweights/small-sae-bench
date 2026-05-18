@@ -1,0 +1,23 @@
+[project]
+name = "small-sae-bench"
+version = "0.1.0"
+description = "Architecture benchmark for sparse autoencoders at sub-1B model scale, plus a novel Position-Aware TopK variant."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.3",
+    "transformers>=4.40",
+    "huggingface_hub>=0.23",
+    "datasets>=2.19",
+    "numpy>=1.26",
+    "tqdm>=4.66",
+    "safetensors>=0.4",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
