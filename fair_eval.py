@@ -18,6 +18,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from legible_weights.data.activations import collect_activations
 from legible_weights.data.adapters import QWEN_LLAMA
+from legible_weights.eval.recovery import ce_recovery
 from legible_weights.sae.model import SAEConfig, TopKSAE
 from legible_weights.sae.position_aware import (
     PositionAwareSAEConfig,
@@ -32,6 +33,8 @@ def main():
     ap.add_argument("--n-tokens", type=int, default=500_000)
     ap.add_argument("--seq-len", type=int, default=512)
     ap.add_argument("--dataset-offset", type=int, default=100_000)
+    ap.add_argument("--ce-n-batches", type=int, default=8)
+    ap.add_argument("--ce-batch-size", type=int, default=4)
     args = ap.parse_args()
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -77,8 +80,6 @@ def main():
         adapter=QWEN_LLAMA, shuffle=False, return_positions=True,
     )
     print(f"[data] held-out: {tuple(acts.shape)}, pos in [{pos.min()},{pos.max()}]")
-    del model
-    torch.cuda.empty_cache()
 
     # Evaluate each architecture on:
     #   A) positions >= 4   — what TopK was trained for; fair head-to-head
@@ -142,6 +143,56 @@ def main():
         print(f"  position_aware: mse={out[bucket_name]['position_aware']['mse']:.4f}  "
               f"ev={out[bucket_name]['position_aware']['ev']:.4f}  "
               f"L0={out[bucket_name]['position_aware']['l0']:.1f}")
+
+    # CE recovery: splice intervention through the live base model.
+    # TopK was trained with exclude_first_n=4, so we splice its reconstruction
+    # only on positions >= 4. PositionAware has no exclude_first_n and runs on
+    # all positions.
+    print("\n[ce] computing CE recovery via splice intervention")
+    ds_ce = load_dataset("HuggingFaceFW/fineweb-edu", name="sample-10BT",
+                          split="train", streaming=True)
+    ds_ce = ds_ce.skip(args.dataset_offset + 20_000)  # disjoint from recon eval slice
+    ce_texts_topk = (row["text"] for row in ds_ce)
+
+    rec_topk = ce_recovery(
+        model=model, tokenizer=tok, sae=topk, texts=ce_texts_topk,
+        layer_idx=layer, n_batches=args.ce_n_batches,
+        batch_size=args.ce_batch_size, seq_len=args.seq_len,
+        device=device, exclude_first_n=4,
+    )
+    print(f"  topk:           clean={rec_topk.ce_clean:.3f}  "
+          f"recon={rec_topk.ce_recon:.3f}  zero={rec_topk.ce_zero:.3f}  "
+          f"recovered={rec_topk.recovered:.4f}")
+
+    ds_ce2 = load_dataset("HuggingFaceFW/fineweb-edu", name="sample-10BT",
+                           split="train", streaming=True)
+    ds_ce2 = ds_ce2.skip(args.dataset_offset + 20_000)
+    ce_texts_pa = (row["text"] for row in ds_ce2)
+    rec_pa = ce_recovery(
+        model=model, tokenizer=tok, sae=pa, texts=ce_texts_pa,
+        layer_idx=layer, n_batches=args.ce_n_batches,
+        batch_size=args.ce_batch_size, seq_len=args.seq_len,
+        device=device, exclude_first_n=0, position_aware=True,
+    )
+    print(f"  position_aware: clean={rec_pa.ce_clean:.3f}  "
+          f"recon={rec_pa.ce_recon:.3f}  zero={rec_pa.ce_zero:.3f}  "
+          f"recovered={rec_pa.recovered:.4f}")
+
+    out["ce_recovery"] = {
+        "topk": {
+            "ce_clean": rec_topk.ce_clean, "ce_recon": rec_topk.ce_recon,
+            "ce_zero": rec_topk.ce_zero, "recovered": rec_topk.recovered,
+            "n_tokens": rec_topk.n_tokens,
+        },
+        "position_aware": {
+            "ce_clean": rec_pa.ce_clean, "ce_recon": rec_pa.ce_recon,
+            "ce_zero": rec_pa.ce_zero, "recovered": rec_pa.recovered,
+            "n_tokens": rec_pa.n_tokens,
+        },
+    }
+
+    del model
+    torch.cuda.empty_cache()
 
     (args.bench_dir / "fair_eval.json").write_text(json.dumps(out, indent=2))
     print(f"\n[save] wrote {args.bench_dir}/fair_eval.json")

@@ -13,19 +13,23 @@ fitting the high-norm outlier directions at the first 4 sequence positions,
 and the standard fix (`exclude_first_n=4`) discards those positions
 entirely.
 
-## Headline finding
+## Headline finding (depth-replicated)
 
-On Qwen2.5-0.5B layer 9, held-out 500K tokens, **TopK vs Position-Aware TopK**:
+On Qwen2.5-0.5B at three depths, held-out 500K tokens, **TopK vs
+Position-Aware TopK**:
 
-| position bucket          | n        | TopK             | Position-Aware   |
-|--------------------------|---------:|------------------|------------------|
-| **positions ≥ 4**        | 495,180  | EV **0.841**     | EV **0.814**     |
-| **positions 0–3**        | 4,820    | EV **−0.07** (MSE 632) | EV **0.9997** (MSE 0.16) |
+| layer | pos ≥ 4 EV (TopK / PA) | pos 0–3 EV (TopK / PA) | CE rec. (TopK / PA) |
+|-------|--------------------------|------------------------|---------------------|
+| **L5**  | 0.863 / **0.835**     | **−0.05** / 0.9997     | 0.988 / 0.984       |
+| **L9**  | 0.841 / **0.814**     | **−0.06** / 0.9997     | 0.974 / 0.966       |
+| **L15** | 0.824 / **0.803**     | **−0.47** / 0.9997     | 0.944 / 0.935       |
 
 Position-Aware TopK adds a per-position pre-bias for the first 16 positions
 (14,336 extra params, 0.08 % of the SAE total) and **extends usable
-reconstruction to the full sequence at a 3-point EV cost on mid-sequence
-positions**. The standard `exclude_first_n` workaround is no longer needed.
+reconstruction to the full sequence at a consistent 2–3-point EV cost on
+mid-sequence positions, with the cost paying off most at late layers
+where TopK's prefix failure is catastrophic** (EV −0.47 at L15). The
+standard `exclude_first_n` workaround is no longer needed.
 
 ## What's in this repo
 
@@ -83,12 +87,15 @@ in v0.1; running it is a one-line invocation.
 
 ## Falsifiable claim
 
-**On Qwen2.5-0.5B layer 9, adding a per-position pre-bias for the first 16
-sequence positions to a TopK SAE extends usable reconstruction to
-positions 0–3 (EV −0.07 → 0.9997) at a 3-point EV cost on mid-sequence
-positions (0.841 → 0.814).** The architecture adds 0.08 % to the parameter
-count and eliminates the need for `exclude_first_n` in the training
-pipeline.
+**Across layers 5, 9, and 15 of Qwen2.5-0.5B, adding a per-position pre-bias
+for the first 16 sequence positions to a TopK SAE extends usable
+reconstruction to positions 0–3 (EV 0.9997 at every depth, vs −0.05 to
+−0.47 for vanilla TopK) at a consistent 2–3-point EV cost on mid-sequence
+positions and a 0.4–0.9-point cost on splice-intervention CE recovery.**
+The architecture adds 0.08 % to the parameter count and eliminates the
+need for `exclude_first_n` in the training pipeline. **Prefix-failure
+severity grows with depth** (L5 −0.05 → L15 −0.47), making position-
+conditioning more valuable at late layers.
 
 ## Part of
 

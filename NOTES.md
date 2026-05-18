@@ -1,6 +1,6 @@
 # Small-SAE Benchmark: TopK / L1 / Gated vs. Position-Aware TopK
 
-**Date:** 2026-05-18 (v0.1)
+**Date:** 2026-05-18 (v0.2 — depth replication + CE recovery)
 
 ## Question
 
@@ -72,57 +72,87 @@ Two important observations before drawing any conclusion:
    To compare apples to apples we need to evaluate at the same position
    set as TopK (positions ≥ 4).
 
-## The fair head-to-head
+## The fair head-to-head — depth curve
 
 Held-out 500K tokens from a later FineWeb-Edu slice, evaluated in three
-position buckets:
+position buckets at three different layers of Qwen2.5-0.5B (mid, mid-late,
+late). CE recovery via splice intervention through the live base model.
 
-| position bucket          | n        | TopK             | PositionAware    |
-|--------------------------|---------:|------------------|------------------|
-| **positions ≥ 4**        | 495,180  | EV **0.841**, MSE 0.034 | EV **0.814**, MSE 0.040 |
-| positions 0–3            | 4,820    | EV **−0.07**, MSE **632** | EV **0.9997**, MSE 0.164 |
-| all positions            | 500,000  | EV 0.21, MSE 6.13      | EV 0.995, MSE 0.041    |
+### Reconstruction EV by position bucket
 
-This is the clean result:
+| layer | bucket | n | TopK EV | Pos-Aware EV |
+|-------|--------|--:|---------|--------------|
+| **L5**  | positions ≥ 4 | 495,180 | **0.863** | **0.835** |
+|         | positions 0–3 | 4,820   | −0.05    | 0.9997 |
+| **L9**  | positions ≥ 4 | 495,180 | **0.841** | **0.814** |
+|         | positions 0–3 | 4,820   | −0.06    | 0.9997 |
+| **L15** | positions ≥ 4 | 495,180 | **0.824** | **0.803** |
+|         | positions 0–3 | 4,820   | **−0.47** | 0.9997 |
 
-- On positions ≥ 4 (where TopK was trained), the two architectures are
-  **essentially equivalent**: TopK 0.841 vs PositionAware 0.814 — a 3-point
-  EV gap, with TopK slightly ahead. Some of PositionAware's expressive
-  capacity is being spent on per-position biases instead of features.
-- On positions 0–3 (the outlier prefix), TopK is **catastrophic** (negative
-  EV, MSE > 600 — it has literally never seen these inputs and the
-  activations there have 50–100× larger norms than mid-sequence).
-  PositionAware reconstructs them essentially perfectly.
+### CE recovery (splice intervention)
+
+| layer | TopK CE recovered | Pos-Aware CE recovered | Δ           |
+|-------|-------------------|------------------------|-------------|
+| L5    | **0.988**         | **0.984**              | −0.4 pts    |
+| L9    | **0.974**         | **0.966**              | −0.8 pts    |
+| L15   | **0.944**         | **0.935**              | −0.9 pts    |
+
+### What the depth curve reveals
+
+Three trends emerge from the depth replication that weren't visible from
+L9 alone:
+
+1. **The EV cost on positions ≥ 4 is consistent at ~2–3 points across all
+   depths.** Per-position bias subtraction takes a small, layer-invariant
+   bite out of mid-sequence reconstruction quality. This is the cost of
+   spending some SAE capacity on positional normalization instead of
+   features.
+2. **TopK's catastrophic prefix failure gets dramatically worse at late
+   layers.** At L5 the prefix EV is just slightly negative (−0.05); at L15
+   it crashes to −0.47. Late residual streams carry larger-magnitude
+   outliers at the sequence prefix, and TopK has *never seen them* during
+   training. Position-Aware handles all three depths equally well at the
+   prefix (EV 0.9997 each time).
+3. **The CE-recovery cost of Position-Aware grows mildly with depth**
+   (0.4 → 0.8 → 0.9 pts). The intervention is more sensitive at deeper
+   layers because the downstream computation has further to amplify any
+   reconstruction errors.
+
+**Combined**: Position-Aware's value proposition is strongest at late
+layers where TopK's prefix failure is catastrophic. At mid-network the
+tradeoff is more even.
 
 ## Falsifiable claim
 
-**On Qwen2.5-0.5B layer 9, a TopK sparse autoencoder augmented with a
-per-position pre-bias for the first 16 sequence positions extends usable
-reconstruction to positions 0–3 (improving EV from −0.07 to 0.9997) at a
-3-point EV cost on mid-sequence positions (0.841 → 0.814). The architecture
-adds 14,336 parameters (0.08% of the 18.9 M total) and removes the need
-for `exclude_first_n` in the training pipeline.**
+**Across layers 5, 9, and 15 of Qwen2.5-0.5B, a TopK sparse autoencoder
+augmented with a per-position pre-bias for the first 16 sequence positions
+extends usable reconstruction to positions 0–3 (EV 0.9997 at every depth,
+vs −0.05 to −0.47 for vanilla TopK) at a 2–3-point EV cost on mid-sequence
+positions and a 0.4–0.9-point cost on splice-intervention CE recovery.
+The architecture adds 14,336 parameters (0.08 % of the 18.9 M SAE total)
+and removes the need for `exclude_first_n` in the training pipeline. The
+prefix-failure severity grows with depth (L5 −0.05 → L15 −0.47), making
+position-conditioning more valuable at late layers.**
 
-In plain terms: vanilla TopK can't see what the model is doing at the
-sequence prefix and has to discard those positions. Per-position bias
-subtraction handles them for nearly zero cost. The tradeoff is real but
-small.
+In plain terms: vanilla TopK SAEs cannot see what small open-weight LLMs
+compute at the first ~4 sequence positions and have to discard those
+positions during training. Per-position bias subtraction handles them
+essentially perfectly at all three measured depths, for a small but real
+cost on the dominant 99 % of mid-sequence tokens.
 
-## What's NOT in v0.1
+## What's NOT in v0.2
 
-- **Only one model, one layer.** Qwen2.5-0.5B at L9. The outlier-position
-  trap might be more or less severe at other depths or in other
-  architectures.
+- **Only one model.** Qwen2.5-0.5B at three depths. Other architectures
+  (GPT-2, Llama, Gemma) might have qualitatively different outlier-
+  position-trap profiles. The bench script supports GPT-2 small via
+  `--base gpt2-small` and replication is a one-line invocation; we
+  haven't run it.
 - **L1 and Gated were not given a fair recipe shot.** A proper "best
   architecture for small models" comparison would include their full
   recipes (LR warmup, decoder-norm constraints during not just after,
   longer schedules with more L1 ramping). We did the default recipe; both
   collapsed. Treat that as an ease-of-use signal, not a verdict on the
   architectures.
-- **No CE recovery eval here.** The benchmark reports training-side and
-  held-out reconstruction metrics. Adding CE recovery via splice
-  intervention is straightforward (we have the `eval/recovery.py` code
-  from the other projects) and a natural v0.2.
 - **No feature-interpretability comparison.** Do PositionAware's
   features fire on the same kinds of tokens as TopK's, or differently?
   The dead-feature count is 9× higher under PositionAware (4,221 vs

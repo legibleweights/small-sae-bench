@@ -1,0 +1,33 @@
+{
+  "base": "qwen2.5-0.5b",
+  "layer": 5,
+  "d_in": 896,
+  "d_hidden": 14336,
+  "k": 32,
+  "n_tokens": 5000000,
+  "seq_len": 512,
+  "lr": 0.0005,
+  "batch_size": 4096,
+  "epochs": 4,
+  "exclude_first_n_for_non_position_aware": 4,
+  "results": {
+    "topk": {
+      "wall_seconds": 86.93356204032898,
+      "final_mse": 0.019837405532598495,
+      "final_explained_var": 0.8667317209750858,
+      "final_l0_mean": 32.0,
+      "final_l0_std": 0.0,
+      "dead_features_on_eval_batch": 292,
+      "n_history_points": 196
+    },
+    "position_aware": {
+      "wall_seconds": 99.43605780601501,
+      "final_mse": 0.02569129504263401,
+      "final_explained_var": 0.9967961459114817,
+      "final_l0_mean": 32.0,
+      "final_l0_std": 0.0,
+      "dead_features_on_eval_batch": 1969,
+      "n_history_points": 196
+    }
+  }
+}
