@@ -21,12 +21,20 @@ from datasets import load_dataset
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from legible_weights.data.activations import collect_activations
-from legible_weights.data.adapters import QWEN_LLAMA
+from legible_weights.data.adapters import GPT2, PYTHIA, QWEN_LLAMA
 from legible_weights.sae.register_subtracted import (
     RegisterSubtractedSAEConfig,
     RegisterSubtractedTopKSAE,
 )
 from legible_weights.sae.unified_train import UnifiedTrainConfig, train_unified
+
+
+# Multi-model dispatch — pick the right adapter per architecture
+BASE_SPECS = {
+    "qwen2.5-0.5b": {"hf": "Qwen/Qwen2.5-0.5B", "adapter": QWEN_LLAMA},
+    "gpt2-small":   {"hf": "openai-community/gpt2", "adapter": GPT2},
+    "pythia-1.4b":  {"hf": "EleutherAI/pythia-1.4b", "adapter": PYTHIA},
+}
 
 
 @torch.no_grad()
@@ -53,7 +61,8 @@ def compute_register_vector(model, tok, device, layer: int, n_sequences: int = 2
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", default="Qwen/Qwen2.5-0.5B")
+    ap.add_argument("--base", choices=list(BASE_SPECS), default="qwen2.5-0.5b",
+                    help="Model family key — picks the right adapter")
     ap.add_argument("--layer", type=int, default=9)
     ap.add_argument("--n-tokens", type=int, default=5_000_000)
     ap.add_argument("--seq-len", type=int, default=512)
@@ -68,11 +77,15 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     args.out.mkdir(parents=True, exist_ok=True)
 
-    tok = AutoTokenizer.from_pretrained(args.model)
+    spec = BASE_SPECS[args.base]
+    model_name = spec["hf"]
+    adapter = spec["adapter"]
+
+    tok = AutoTokenizer.from_pretrained(model_name)
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
     model = AutoModelForCausalLM.from_pretrained(
-        args.model, torch_dtype=torch.float16
+        model_name, torch_dtype=torch.float16
     ).to(device).eval()
     d_model = model.config.hidden_size
 
@@ -92,7 +105,7 @@ def main():
         texts=(row["text"] for row in ds),
         layer_idx=args.layer, n_tokens=args.n_tokens, seq_len=args.seq_len,
         batch_size=8, device=device, exclude_first_n=0,
-        adapter=QWEN_LLAMA, shuffle=True, return_positions=True,
+        adapter=adapter, shuffle=True, return_positions=True,
     )
     print(f"[data] {tuple(activations.shape)} in {time.time() - t0:.1f}s")
 
@@ -119,7 +132,9 @@ def main():
     # 4) Save
     torch.save(sae.state_dict(), args.out / "sae.pt")
     (args.out / "config.json").write_text(json.dumps({
-        "base_model": args.model,
+        "base_model": model_name,
+        "base_key": args.base,
+        "adapter": adapter.name,
         "layer": args.layer,
         "arch": "RegisterSubtractedTopK",
         "sae": {"d_in": cfg.d_in, "d_hidden": cfg.d_hidden, "k": cfg.k},

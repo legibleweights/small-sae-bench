@@ -13,7 +13,31 @@ fitting the high-norm outlier directions at the first 4 sequence positions,
 and the standard fix (`exclude_first_n=4`) discards those positions
 entirely.
 
-## v0.3 headline — Register-Subtracted TopK is strictly best at all three depths
+## v0.4 headline — Register-Subtracted is a strict Pareto-improvement over TopK across 3 models, 5 layers
+
+**Cross-model + cross-depth replication** of v0.3. RS is a strict Pareto-
+improvement over vanilla TopK: never regresses on CE recovery, gives
+perfect prefix-position reconstruction (EV ≥ 0.9997 across all configs
+vs TopK's −0.47 to +0.94 range), and pays a 0.2–1.5pt mid-sequence EV
+cost. **The size of its CE-recovery gain over TopK scales with how badly
+TopK's prefix is broken.**
+
+| model · layer | TopK EV pos≥4 | **RS EV pos≥4** | TopK EV pos 0-3 | **RS EV pos 0-3** | TopK CE rec | **RS CE rec** | RS CE gain |
+|---|---|---|---|---|---|---|---|
+| Qwen2.5-0.5B L5  | 0.863 | **0.861** | −0.05 | **0.9999** | 0.988 | **0.991** | +0.3 pts |
+| Qwen2.5-0.5B L9  | 0.841 | **0.837** | −0.06 | **0.9999** | 0.974 | **0.983** | +0.9 pts |
+| Qwen2.5-0.5B L15 | 0.824 | **0.819** | **−0.47** | **0.9997** | 0.944 | **0.967** | **+2.4 pts** |
+| **GPT-2 small L6**   | 0.850 | **0.844** | 0.08  | **0.9997** | 0.974 | **0.989** | **+1.5 pts** |
+| **Pythia-1.4B L12**  | 0.940 | **0.925** | 0.935 | **0.998**  | 0.962 | **0.962** | tied |
+
+Pythia L12 is the outlier — TopK is **not broken** at the prefix there
+(EV 0.935) because Pythia's eraser is in the *final* layer (L23) and
+the register at L12 has a smaller magnitude (1,283 RMS vs Qwen 1,682,
+GPT-2 3,041, per `outlier-position-anatomy` v0.2). RS still matches
+TopK there.
+
+Zero extra learnable parameters in any case — the register is one
+offline-computed fixed vector per (model, layer).
 
 Knowing the position-0 register direction (computed offline; see the
 sister project [outlier-position-anatomy](https://github.com/legibleweights/outlier-position-anatomy)

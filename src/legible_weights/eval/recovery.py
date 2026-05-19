@@ -88,7 +88,16 @@ def ce_recovery(
     `mean_activation` (D,) is used for the zero-information baseline. If not
     given, it's estimated from the first batch.
     """
-    layer = model.model.layers[layer_idx]
+    # Multi-arch dispatch: Qwen/Llama uses model.model.layers, GPT-2 uses
+    # model.transformer.h, Pythia uses model.gpt_neox.layers.
+    if hasattr(model, "model") and hasattr(model.model, "layers"):
+        layer = model.model.layers[layer_idx]
+    elif hasattr(model, "transformer") and hasattr(model.transformer, "h"):
+        layer = model.transformer.h[layer_idx]
+    elif hasattr(model, "gpt_neox") and hasattr(model.gpt_neox, "layers"):
+        layer = model.gpt_neox.layers[layer_idx]
+    else:
+        raise ValueError(f"Unknown model arch: {type(model).__name__}")
 
     # Materialize n_batches worth of inputs first (so all three runs see identical data)
     inputs: list[dict[str, torch.Tensor]] = []

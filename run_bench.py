@@ -27,7 +27,7 @@ from datasets import load_dataset
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from legible_weights.data.activations import collect_activations
-from legible_weights.data.adapters import GPT2, QWEN_LLAMA, ModelAdapter
+from legible_weights.data.adapters import GPT2, PYTHIA, QWEN_LLAMA, ModelAdapter
 from legible_weights.sae.gated import GatedSAE, GatedSAEConfig
 from legible_weights.sae.l1 import L1SAE, L1SAEConfig
 from legible_weights.sae.model import SAEConfig, TopKSAE
@@ -50,6 +50,12 @@ BASE_SPECS = {
         "adapter": GPT2,
         "d_model": 768,
         "default_layer": 6,
+    },
+    "pythia-1.4b": {
+        "hf": "EleutherAI/pythia-1.4b",
+        "adapter": PYTHIA,
+        "d_model": 2048,
+        "default_layer": 12,
     },
 }
 

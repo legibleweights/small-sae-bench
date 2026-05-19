@@ -41,6 +41,10 @@ def _ar_get_gpt2_layer(model, idx: int) -> torch.nn.Module:
     return model.transformer.h[idx]
 
 
+def _ar_get_pythia_layer(model, idx: int) -> torch.nn.Module:
+    return model.gpt_neox.layers[idx]
+
+
 def _ar_output_to_hidden(outputs):
     # Most AR decoder blocks return (hidden_states, ...)
     if isinstance(outputs, tuple):
@@ -85,6 +89,13 @@ QWEN_LLAMA = ModelAdapter(
 GPT2 = ModelAdapter(
     name="gpt2",
     get_layer=_ar_get_gpt2_layer,
+    output_to_hidden=_ar_output_to_hidden,
+    forward=_ar_forward,
+)
+
+PYTHIA = ModelAdapter(
+    name="pythia",
+    get_layer=_ar_get_pythia_layer,
     output_to_hidden=_ar_output_to_hidden,
     forward=_ar_forward,
 )
