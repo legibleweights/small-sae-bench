@@ -30,21 +30,23 @@ TopK's prefix is broken.**
 | **GPT-2 small L6**   | 0.850 | **0.844** | 0.08  | **0.9997** | 0.974 | **0.989** | **+1.5 pts** |
 | **Pythia-1.4B L12**  | 0.940 | **0.925** | 0.935 | **0.998**  | 0.962 | **0.962** | tied |
 | **Pythia-1.4B L22**  | 0.802 | 0.761 (−4.2pt) | 0.977 | **0.991**  | 0.895 | **0.934** | **+3.9 pts** |
+| **GPT-2 small L10**  | 0.797 | 0.782 (−1.5pt) | **−1.25** (catastrophic) | **0.999** | **0.950** | 0.947 | **−0.4 pts** (regression!) |
 
-Pythia L12 is the case where TopK isn't broken at the prefix; RS ties.
-**Pythia L22 (just before the L23 eraser) is the most interesting case** —
-TopK's prefix EV is actually *better* there (0.977 vs L12's 0.935) but
-RS gives the **biggest CE-recovery gain we've seen anywhere** (+3.9pts).
-Why: at L22 the register magnitude is at peak (just before erasure), so
-small relative errors × huge magnitude = large absolute errors that
-disrupt the downstream eraser. RS's perfect prefix reconstruction
-(subtraction is exact) avoids that. The cost is a real 4.2pt mid-seq
-EV drop — the biggest in the depth/model curve.
+**GPT-2 L10 is a counterexample to the magnitude rule.** Both v0.4.1
+conditions are present (peak magnitude + catastrophic TopK prefix), yet
+RS slightly *regresses* CE recovery (−0.4 pts). Best hypothesis: GPT-2's
+eraser at L11 is **attention-head-mediated** (head 8 does 77 % per
+outlier-position-anatomy v0.5), and attention heads propagate small
+per-position errors across positions; Qwen L21 and Pythia L23 erasers
+are MLP-mediated which is more forgiving. **The eraser mechanism may
+matter as much as the register magnitude** — though one datapoint isn't
+enough to commit to this rule.
 
-**Refined rule:** RS wins on CE recovery when position 0 has either
-(a) high norm (typically late layers of any small open transformer) or
-(b) catastrophic TopK prefix EV. Tied when neither. Never regresses
-CE recovery; always gives perfect prefix reconstruction.
+**Updated honest claim:** RS wins CE recovery in 5/7 configs tested,
+ties once, regresses once (−0.4 pts). Always gives perfect prefix
+reconstruction. Mid-sequence EV cost 0.2–4.2 pts depending on
+configuration. **Not universally Pareto-better — practitioners should
+A/B test for their specific (model, layer).**
 
 Zero extra learnable parameters in any case — the register is one
 offline-computed fixed vector per (model, layer).

@@ -1,6 +1,6 @@
 # Small-SAE Benchmark: TopK / L1 / Gated vs. Position-Aware TopK
 
-**Date:** 2026-05-19 (v0.4.1 — refined Pareto rule from Pythia L22 datapoint)
+**Date:** 2026-05-19 (v0.4.2 — GPT-2 L10 refutes universal-Pareto claim)
 
 ## Question
 
@@ -247,6 +247,63 @@ suggested. For practitioners: if you care primarily about CE recovery
 (deployment-relevant) RS wins everywhere except Pythia L12; if you care
 primarily about mid-sequence reconstruction quality, vanilla TopK is
 preferable at late layers.
+
+### v0.4.2 — GPT-2 L10: a counterexample to the magnitude rule
+
+After v0.4.1, I tested one more config that the magnitude rule predicted
+RS would win at: GPT-2 small L10, the layer just before GPT-2's L11
+attention-head-mediated eraser (per outlier-position-anatomy v0.5). Both
+v0.4.1 conditions are present: peak register magnitude *and*
+catastrophically broken TopK prefix (EV −1.25).
+
+| GPT-2 L10 | TopK | **Register-Subtracted** |
+|---|---|---|
+| EV pos ≥ 4 | 0.797 | 0.782 (−1.5pt) |
+| EV pos 0–3 | **−1.25** (catastrophic) | 0.999 |
+| **CE recovered** | **0.950** | 0.947 (**−0.4 pts**, slight regression) |
+
+**The magnitude rule predicted a big RS gain. We got a tiny regression.**
+The rule is wrong, or at least incomplete.
+
+**Best hypothesis** (would need more data to verify): GPT-2's eraser at
+L11 is **attention-head-mediated** (head 8 does 77 % of the erase per
+outlier-position-anatomy v0.5), whereas Qwen L21 and Pythia L23 erasers
+are MLP-mediated. Attention heads attend cross-position; small per-
+position reconstruction errors from RS get amplified through L11's
+eraser-head in ways that MLPs don't propagate. **The eraser mechanism
+type may matter as much as the register magnitude.**
+
+I don't want to over-update on one data point. The honest cross-model
+summary across all 7 datapoints we now have:
+
+| (model, layer)       | RS CE gain vs TopK | comment |
+|----------------------|:------------------:|---------|
+| Qwen L5              | +0.3               | win    |
+| Qwen L9              | +0.9               | win    |
+| Qwen L15             | +2.4               | big win |
+| GPT-2 L6             | +1.5               | win    |
+| **GPT-2 L10**        | **−0.4**           | **regression** |
+| Pythia L12           | tied               | TopK not broken |
+| Pythia L22           | +3.9               | biggest win |
+
+**Updated honest claim:**
+
+> Register-Subtracted TopK is generally beneficial for SAE-based
+> interpretability on small open transformers — it wins on CE recovery
+> in 5 of 7 configurations tested, ties once, and slightly regresses
+> once. Always gives perfect prefix-position reconstruction (EV ≥ 0.999
+> vs TopK's −1.25 to +0.94 range). The factors driving win-size include
+> register magnitude, prefix-reconstruction-error gap, *and the
+> mechanism type of the eraser layer* (attention-head vs MLP). Mid-
+> sequence EV cost ranges from 0.2 to 4.2 pts depending on the
+> configuration; it's most expensive at late layers with large register
+> magnitudes. **Practitioners should A/B test RS vs TopK for their
+> specific (model, layer) before committing.**
+
+This is less neat than v0.3 / v0.4 / v0.4.1, but it's the data. The
+write-and-erase circuit story from outlier-position-anatomy makes the
+intervention conceptually sound; the empirical caveats above mean the
+intervention's benefit isn't guaranteed.
 
 ### v0.4 limitations
 

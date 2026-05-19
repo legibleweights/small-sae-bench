@@ -1,0 +1,22 @@
+{
+  "base_model": "openai-community/gpt2",
+  "base_key": "gpt2-small",
+  "adapter": "gpt2",
+  "layer": 10,
+  "arch": "RegisterSubtractedTopK",
+  "sae": {
+    "d_in": 768,
+    "d_hidden": 12288,
+    "k": 32
+  },
+  "training": {
+    "n_tokens": 5000000,
+    "seq_len": 512,
+    "batch_size": 4096,
+    "lr": 0.0005,
+    "n_epochs": 4,
+    "exclude_first_n": 0,
+    "dataset": "HuggingFaceFW/fineweb-edu:sample-10BT"
+  },
+  "register_norm": 3104.172607421875
+}
