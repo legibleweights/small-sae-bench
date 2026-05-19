@@ -1,0 +1,24 @@
+{
+  "base": "qwen2.5-0.5b",
+  "layer": 20,
+  "d_in": 896,
+  "d_hidden": 14336,
+  "k": 32,
+  "n_tokens": 5000000,
+  "seq_len": 512,
+  "lr": 0.0005,
+  "batch_size": 4096,
+  "epochs": 4,
+  "exclude_first_n_for_non_position_aware": 4,
+  "results": {
+    "topk": {
+      "wall_seconds": 85.98559379577637,
+      "final_mse": 0.36689722537994385,
+      "final_explained_var": 0.8212549712623993,
+      "final_l0_mean": 32.0,
+      "final_l0_std": 0.0,
+      "dead_features_on_eval_batch": 1300,
+      "n_history_points": 196
+    }
+  }
+}
