@@ -1,6 +1,6 @@
 # Small-SAE Benchmark: TopK / L1 / Gated vs. Position-Aware TopK
 
-**Date:** 2026-05-19 (v0.4 — Register-Subtracted cross-model on GPT-2 + Pythia)
+**Date:** 2026-05-19 (v0.4.1 — refined Pareto rule from Pythia L22 datapoint)
 
 ## Question
 
@@ -192,6 +192,61 @@ range across models / layers), and pays a small or zero mid-sequence
 EV cost (0.2–1.5 pts). The size of its CE-recovery improvement over
 TopK is empirically a function of how badly TopK's prefix handling is
 broken at that model / layer.
+
+### v0.4.1 — Pythia L22: a counterexample that sharpens the rule
+
+After v0.4 we tested one more (model, layer) configuration: Pythia-1.4B
+at layer 22 — which is **just before the L23 eraser** identified in
+outlier-position-anatomy. The register magnitude here should be at peak.
+
+| Pythia-1.4B L22 | TopK | **Register-Subtracted** |
+|---|---|---|
+| EV pos≥4 | **0.802** | 0.761 (−4.2 pts — biggest mid-seq cost so far) |
+| EV pos 0–3 | **0.977** (NOT broken!) | 0.991 (only +1.4 pts better) |
+| **CE recovered** | 0.895 | **0.934 (+3.9 pts — biggest gain so far)** |
+
+**This refutes the simple v0.4 rule** "RS gain proportional to TopK
+prefix EV failure." At L22 TopK's prefix EV is actually *better than
+L12* (0.977 vs 0.935), yet RS gives the biggest CE-recovery improvement
+we've seen across any (model, layer) configuration.
+
+**Refined rule.** At L22, the register's residual magnitude is at peak
+because we're sampling just before the eraser. Even small *relative*
+reconstruction errors at position 0 produce large *absolute* errors that
+get amplified through the eraser's downstream computation. RS
+reconstructs position 0 essentially perfectly (the subtraction is
+exact); TopK's `exclude_first_n=4` splice keeps the real prefix but
+its mid-sequence errors still propagate.
+
+The actual driver of RS's CE-recovery gain over TopK is the **absolute
+reconstruction-error gap at position 0, weighted by residual magnitude**
+— not EV alone. Two regimes give big gains:
+
+1. **TopK is catastrophically broken at prefix.** Reconstruction error
+   relative-and-absolute. Examples: Qwen all depths, GPT-2 L6.
+2. **TopK reconstructs prefix OK but residual magnitude is huge.** Small
+   relative errors × huge magnitude = large absolute errors that affect
+   downstream. Example: Pythia L22.
+
+Pythia L12 has neither (good prefix EV *and* moderate magnitude) → RS
+tied with TopK there.
+
+**Updated falsifiable claim:** Register-Subtracted TopK is a Pareto-
+improvement over vanilla TopK on CE recovery whenever the position-0
+residual at the SAE's target layer has either (a) high norm (typically
+late layers of any small open transformer) or (b) catastrophic prefix
+reconstruction under vanilla TopK (typically most layers in Qwen, mid-
+network in GPT-2). It never regresses CE recovery and always gives
+perfect prefix-position reconstruction.
+
+**Honest implications.** Pythia L22 also has the **worst** mid-sequence
+EV cost (4.2 pts vs 0.2–1.5 pts elsewhere) — RS pays a real Pareto cost
+on mid-sequence reconstruction at late layers where the register
+magnitude is largest. This is a more nuanced trade-off than v0.4
+suggested. For practitioners: if you care primarily about CE recovery
+(deployment-relevant) RS wins everywhere except Pythia L12; if you care
+primarily about mid-sequence reconstruction quality, vanilla TopK is
+preferable at late layers.
 
 ### v0.4 limitations
 

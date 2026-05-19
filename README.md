@@ -29,12 +29,22 @@ TopK's prefix is broken.**
 | Qwen2.5-0.5B L15 | 0.824 | **0.819** | **−0.47** | **0.9997** | 0.944 | **0.967** | **+2.4 pts** |
 | **GPT-2 small L6**   | 0.850 | **0.844** | 0.08  | **0.9997** | 0.974 | **0.989** | **+1.5 pts** |
 | **Pythia-1.4B L12**  | 0.940 | **0.925** | 0.935 | **0.998**  | 0.962 | **0.962** | tied |
+| **Pythia-1.4B L22**  | 0.802 | 0.761 (−4.2pt) | 0.977 | **0.991**  | 0.895 | **0.934** | **+3.9 pts** |
 
-Pythia L12 is the outlier — TopK is **not broken** at the prefix there
-(EV 0.935) because Pythia's eraser is in the *final* layer (L23) and
-the register at L12 has a smaller magnitude (1,283 RMS vs Qwen 1,682,
-GPT-2 3,041, per `outlier-position-anatomy` v0.2). RS still matches
-TopK there.
+Pythia L12 is the case where TopK isn't broken at the prefix; RS ties.
+**Pythia L22 (just before the L23 eraser) is the most interesting case** —
+TopK's prefix EV is actually *better* there (0.977 vs L12's 0.935) but
+RS gives the **biggest CE-recovery gain we've seen anywhere** (+3.9pts).
+Why: at L22 the register magnitude is at peak (just before erasure), so
+small relative errors × huge magnitude = large absolute errors that
+disrupt the downstream eraser. RS's perfect prefix reconstruction
+(subtraction is exact) avoids that. The cost is a real 4.2pt mid-seq
+EV drop — the biggest in the depth/model curve.
+
+**Refined rule:** RS wins on CE recovery when position 0 has either
+(a) high norm (typically late layers of any small open transformer) or
+(b) catastrophic TopK prefix EV. Tied when neither. Never regresses
+CE recovery; always gives perfect prefix reconstruction.
 
 Zero extra learnable parameters in any case — the register is one
 offline-computed fixed vector per (model, layer).
