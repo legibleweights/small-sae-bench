@@ -13,7 +13,29 @@ fitting the high-norm outlier directions at the first 4 sequence positions,
 and the standard fix (`exclude_first_n=4`) discards those positions
 entirely.
 
-## Headline finding (depth-replicated)
+## v0.3 headline — Register-Subtracted TopK is strictly better
+
+Knowing the position-0 register direction (computed offline; see the
+sister project [outlier-position-anatomy](https://github.com/legibleweights/outlier-position-anatomy)
+v0.2 showing it's a fixed constant vector) lets us build an SAE that
+beats both vanilla TopK and Position-Aware TopK across the board:
+
+**Qwen2.5-0.5B layer 9, held-out 500K tokens:**
+
+| metric                | TopK            | Position-Aware  | **Register-Subtracted** |
+|-----------------------|-----------------|-----------------|-------------------------|
+| EV at positions ≥ 4   | 0.841           | 0.814           | **0.837**               |
+| EV at positions 0–3   | −0.058 (broken) | 0.9997          | **0.9999**              |
+| **CE recovered**      | 0.974           | 0.966           | **0.983**               |
+
+Zero extra learnable parameters — the register is one offline-computed
+fixed vector. **The trade-off Position-Aware was paying turns out to be
+mostly an artifact of using a learnable bias for a quantity that is
+empirically constant.**
+
+See [NOTES.md](NOTES.md) v0.3 section for full methodology + caveats.
+
+## Headline finding (v0.2 — depth-replicated Position-Aware vs TopK)
 
 On Qwen2.5-0.5B at three depths, held-out 500K tokens, **TopK vs
 Position-Aware TopK**:

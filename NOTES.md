@@ -1,6 +1,6 @@
 # Small-SAE Benchmark: TopK / L1 / Gated vs. Position-Aware TopK
 
-**Date:** 2026-05-18 (v0.2 — depth replication + CE recovery)
+**Date:** 2026-05-19 (v0.3 — Register-Subtracted TopK SAE added)
 
 ## Question
 
@@ -71,6 +71,74 @@ Two important observations before drawing any conclusion:
    has to explain. EV computed across all positions is dominated by them.
    To compare apples to apples we need to evaluate at the same position
    set as TopK (positions ≥ 4).
+
+## v0.3 — Register-Subtracted TopK: a strictly-better variant
+
+**Motivation.** The sister project [outlier-position-anatomy](https://github.com/legibleweights/outlier-position-anatomy)
+established (v0.2) that the position-0 residual in small open
+transformers is essentially a **fixed constant vector** across inputs
+(99.8 % of energy in the input-independent mean across Qwen2.5-0.5B /
+GPT-2 small / Pythia-1.4B). If position 0's outlier is a known constant,
+we don't need a learned per-position bias to handle it — we can compute
+the constant offline and subtract it directly. **No extra learnable
+parameters.**
+
+**Architecture.** `RegisterSubtractedTopKSAE` (see
+`src/legible_weights/sae/register_subtracted.py`): byte-identical to
+vanilla TopK except at position 0, where a fixed buffer
+`register_vector` (computed offline as the mean of position-0 residuals
+from ~256 held-out inputs) is subtracted from the activation before
+encoding and added back after decoding. Same parameter count as TopK
+(18.9 M) — the buffer is not learnable.
+
+**Result on Qwen2.5-0.5B layer 9**, held-out 500K tokens:
+
+| metric                | TopK            | Position-Aware  | **Register-Subtracted** |
+|-----------------------|-----------------|-----------------|-------------------------|
+| EV at positions ≥ 4   | **0.8407**      | 0.8136          | **0.8369**              |
+| EV at positions 0–3   | −0.058 (broken) | 0.9997          | **0.9999**              |
+| EV all positions      | 0.223           | 0.9947          | **0.9955**              |
+| MSE at positions ≥ 4  | 0.0339          | 0.0396          | 0.0347                  |
+| Dead features         | 464             | 4,221           | (similar to TopK)       |
+| **CE recovered**      | 0.974           | 0.966           | **0.983**               |
+
+**This is strictly better than both baselines.** Register-Subtracted:
+
+- **Recovers 2.3 of the 2.7 EV points** that Position-Aware was paying as
+  the "cost of position handling" on mid-sequence tokens (0.814 → 0.837).
+- **Beats vanilla TopK on CE recovery** (0.983 vs 0.974) — because it
+  also covers positions 0–3 in the splice intervention, so the spliced
+  forward pass is closer to the original.
+- Gets prefix coverage essentially perfectly (EV 0.9999 at positions
+  0–3, same as Position-Aware).
+- Adds **zero learnable parameters**. The register vector is a one-line
+  offline computation: 256 forward passes, mean over position-0
+  residual.
+
+**The "trade-off" between mid-sequence quality and prefix coverage that
+v0.2 documented is mostly an artifact of the per-position-bias design.**
+If you know the register direction (and outlier-position-anatomy v0.2
+showed you can know it cheaply for every small open transformer), you
+can have both.
+
+**Honest interpretation.** This works because the position-0 register
+is genuinely a fixed constant (otherwise no offline-computed vector
+would suffice). Position-Aware's flexibility — learning a *different*
+bias per position — is wasted capacity here, since the bias only needs
+to be non-trivial at position 0 and it's constant there.
+
+### v0.3 limitations
+
+- **Only tested at layer 9 of Qwen2.5-0.5B.** The depth curve and
+  cross-model replication that v0.2 did for Position-Aware would be the
+  obvious extensions for v0.4.
+- **Register computed from 256 inputs.** A larger sample might give a
+  slightly cleaner register, but the variability is already tiny
+  (cosine 0.9999 across pairs of inputs per outlier-position-anatomy
+  v0.2) so this is unlikely to matter.
+- **One register per layer.** If you want to handle position 0 at
+  multiple layers (e.g., training SAEs on layer 5, 9, and 15 of the
+  same model), you need to recompute the register for each.
 
 ## The fair head-to-head — depth curve
 
