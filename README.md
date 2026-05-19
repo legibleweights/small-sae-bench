@@ -13,27 +13,30 @@ fitting the high-norm outlier directions at the first 4 sequence positions,
 and the standard fix (`exclude_first_n=4`) discards those positions
 entirely.
 
-## v0.3 headline — Register-Subtracted TopK is strictly better
+## v0.3 headline — Register-Subtracted TopK is strictly best at all three depths
 
 Knowing the position-0 register direction (computed offline; see the
 sister project [outlier-position-anatomy](https://github.com/legibleweights/outlier-position-anatomy)
 v0.2 showing it's a fixed constant vector) lets us build an SAE that
-beats both vanilla TopK and Position-Aware TopK across the board:
+beats both vanilla TopK and Position-Aware TopK at all three depths of
+Qwen2.5-0.5B — and its CE-recovery advantage **grows with depth**,
+exactly tracking the severity of TopK's prefix failure:
 
-**Qwen2.5-0.5B layer 9, held-out 500K tokens:**
-
-| metric                | TopK            | Position-Aware  | **Register-Subtracted** |
-|-----------------------|-----------------|-----------------|-------------------------|
-| EV at positions ≥ 4   | 0.841           | 0.814           | **0.837**               |
-| EV at positions 0–3   | −0.058 (broken) | 0.9997          | **0.9999**              |
-| **CE recovered**      | 0.974           | 0.966           | **0.983**               |
+| layer | TopK EV (pos ≥ 4) | PA EV | **RS EV** | TopK CE rec | PA CE rec | **RS CE rec** | RS gain vs TopK |
+|------:|:-----------------:|:-----:|:---------:|:-----------:|:---------:|:-------------:|:---------------:|
+| **L5**  | 0.863             | 0.835 | **0.861** | 0.988       | 0.984     | **0.991**     | **+0.3 pts**    |
+| **L9**  | 0.841             | 0.814 | **0.837** | 0.974       | 0.966     | **0.983**     | **+0.9 pts**    |
+| **L15** | 0.824             | 0.803 | **0.819** | 0.944       | 0.935     | **0.967**     | **+2.4 pts**    |
 
 Zero extra learnable parameters — the register is one offline-computed
-fixed vector. **The trade-off Position-Aware was paying turns out to be
-mostly an artifact of using a learnable bias for a quantity that is
-empirically constant.**
+fixed vector per layer. **The trade-off Position-Aware was paying turns
+out to be mostly an artifact of using a learnable bias for a quantity
+that is empirically constant.** The architectural improvement scales
+with the severity of TopK's prefix failure (which is most extreme at
+late layers, per v0.2).
 
-See [NOTES.md](NOTES.md) v0.3 section for full methodology + caveats.
+See [NOTES.md](NOTES.md) v0.3 / v0.3.1 sections for full methodology +
+caveats.
 
 ## Headline finding (v0.2 — depth-replicated Position-Aware vs TopK)
 

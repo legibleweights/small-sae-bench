@@ -1,0 +1,20 @@
+{
+  "base_model": "Qwen/Qwen2.5-0.5B",
+  "layer": 5,
+  "arch": "RegisterSubtractedTopK",
+  "sae": {
+    "d_in": 896,
+    "d_hidden": 14336,
+    "k": 32
+  },
+  "training": {
+    "n_tokens": 5000000,
+    "seq_len": 512,
+    "batch_size": 4096,
+    "lr": 0.0005,
+    "n_epochs": 4,
+    "exclude_first_n": 0,
+    "dataset": "HuggingFaceFW/fineweb-edu:sample-10BT"
+  },
+  "register_norm": 1675.5623779296875
+}

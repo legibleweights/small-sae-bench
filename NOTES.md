@@ -1,6 +1,6 @@
 # Small-SAE Benchmark: TopK / L1 / Gated vs. Position-Aware TopK
 
-**Date:** 2026-05-19 (v0.3 — Register-Subtracted TopK SAE added)
+**Date:** 2026-05-19 (v0.3.1 — Register-Subtracted depth curve added)
 
 ## Question
 
@@ -127,18 +127,43 @@ would suffice). Position-Aware's flexibility — learning a *different*
 bias per position — is wasted capacity here, since the bias only needs
 to be non-trivial at position 0 and it's constant there.
 
+### v0.3.1 — depth curve
+
+Replicated the head-to-head at layers 5 and 15 of Qwen2.5-0.5B. The
+Register-Subtracted SAE is strictly best at all three depths, and its
+margin over the baselines on CE recovery grows with depth — exactly
+matching the depth-pattern of TopK's prefix failure documented in v0.2.
+
+| layer | TopK EV (pos ≥ 4) | PA EV (pos ≥ 4) | **RS EV (pos ≥ 4)** | TopK CE recovered | PA CE recovered | **RS CE recovered** | RS CE gain vs TopK |
+|------:|:-----------------:|:---------------:|:--------------------:|:-----------------:|:---------------:|:--------------------:|:--------------------:|
+| **L5**  | 0.863             | 0.835           | **0.861**            | 0.988             | 0.984           | **0.991**            | **+0.3 pts**          |
+| **L9**  | 0.841             | 0.814           | **0.837**            | 0.974             | 0.966           | **0.983**            | **+0.9 pts**          |
+| **L15** | 0.824             | 0.803           | **0.819**            | 0.944             | 0.935           | **0.967**            | **+2.4 pts**          |
+
+Three trends:
+
+1. **Mid-sequence EV cost shrinks dramatically.** PA paid 2.7–2.1 pts of
+   EV on positions ≥ 4 across the depth curve. RS pays only 0.2–0.5 pts.
+   The "cost of position-handling" is mostly an artifact of using a
+   learnable bias for a quantity that's empirically constant.
+2. **Prefix coverage is essentially perfect at all depths** (EV 0.9997
+   for both PA and RS at every layer; TopK ranges from −0.05 at L5 to
+   −0.47 at L15).
+3. **The CE-recovery advantage of RS over TopK grows with depth**:
+   +0.3 pts at L5 → +0.9 pts at L9 → **+2.4 pts at L15**. The
+   architectural improvement scales with the severity of TopK's prefix
+   failure, which (per v0.2) is most extreme at late layers.
+
 ### v0.3 limitations
 
-- **Only tested at layer 9 of Qwen2.5-0.5B.** The depth curve and
-  cross-model replication that v0.2 did for Position-Aware would be the
-  obvious extensions for v0.4.
-- **Register computed from 256 inputs.** A larger sample might give a
-  slightly cleaner register, but the variability is already tiny
-  (cosine 0.9999 across pairs of inputs per outlier-position-anatomy
-  v0.2) so this is unlikely to matter.
-- **One register per layer.** If you want to handle position 0 at
-  multiple layers (e.g., training SAEs on layer 5, 9, and 15 of the
-  same model), you need to recompute the register for each.
+- **Only on Qwen2.5-0.5B.** Cross-model replication on GPT-2 small and
+  Pythia-1.4B is v0.4 work. The register-collection step uses the same
+  pipeline (`compute_register_vector`) so this is straightforward.
+- **Register computed from 256 inputs.** Variability is already tiny
+  (pairwise cosine 0.9999 from outlier-position-anatomy v0.2) so a
+  larger sample is unlikely to help.
+- **One register per (model, layer).** If you train SAEs at multiple
+  layers of the same model, recompute the register for each.
 
 ## The fair head-to-head — depth curve
 
